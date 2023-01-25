@@ -1,10 +1,10 @@
-//import hash
-//TODO cambiar por sha3
 use sha2::{Sha256, Digest};
 
 #[derive(Debug)]
 pub struct MerkleTree {
-    nodes: Vec<Node>
+    nodes: Vec<Node>,
+    leafs_offset: usize,
+    root_index: usize,
 }
 
 #[derive(Debug)]
@@ -17,8 +17,8 @@ pub struct Node{
 impl MerkleTree {
     pub fn new(data: Vec<u8>) -> MerkleTree {
         let nodes: Vec<Node> = MerkleTree::create_leafs(data);
-        MerkleTree{nodes}
-
+        let leafs_index: usize = nodes.len() - 1;
+        MerkleTree{nodes, leafs_offset: leafs_index, root_index: 0}
     }
 
     pub fn get_root(&self) -> u64 {
@@ -34,29 +34,88 @@ impl MerkleTree {
         to_return
     }
 
+    //TODO fix.
+    pub fn add_data(&mut self, data: Vec<u8>) {
+        //insert the new data 
+        for j in 0..data.len() {
+            let hash = get_sha256(data[j] as u64);
+            self.nodes.insert(self.leafs_offset + 1, Node{hash, left: None, right: None});
+        }
+
+        //update the indexes of the nodes
+        for i in self.leafs_offset + 1..self.nodes.len() {
+            if self.nodes[i].left.is_some() {
+                self.nodes[i].left = Some(self.nodes[i].left.unwrap() + data.len());
+            }
+            if self.nodes[i].right.is_some() {
+                self.nodes[i].right = Some(self.nodes[i].right.unwrap() + data.len());
+            }
+        }
+
+        
+
+        //complete the tree with new data
+        let mut i = 0;
+        while i < data.len() - 1 {
+            let left = self.nodes[self.leafs_offset + 1 + i].hash;
+            let right = self.nodes[self.leafs_offset + 1 + i + 1].hash;
+            let hash = get_sha256_vec(vec![left, right]);
+            let new_node = Node{hash, left: Some(self.leafs_offset + 1 + i), right: Some(self.leafs_offset + 1 + i + 1)};
+            self.nodes.push(new_node);
+            i+=2;
+        }
+
+        //update the indexes
+        self.leafs_offset += data.len() ;
+        self.root_index += data.len() ;
+
+        //complete the tree from root with new data
+        let mut i = self.root_index;
+        while i < self.nodes.len() - 1{
+            let left = self.nodes[i].hash;
+            let right = self.nodes[i+1].hash;
+            let hash = get_sha256_vec(vec![left, right]);
+            let new_node = Node{hash, left: Some(i), right: Some(i+1)};
+            self.nodes.push(new_node);
+            i+=2;
+        }
+        self.root_index = self.nodes.len() - 1;
+
+    }
+
+    
     pub fn complete_tree(&mut self) {
         let mut i = 0;
         while i < self.nodes.len() - 1{
-
-            let left = self.nodes[i].left;
-            let right = self.nodes[i].right;
-
-            if left.is_some() && right.is_some() {
-                i+=1;
-                continue;
-            }
-
-            //update left and right
-            self.nodes[i].left = Some(i);
-            self.nodes[i].right = Some(i+1);
-
-            //create new node
-            let hash = get_sha256_vec(vec![self.nodes[i].hash, self.nodes[i+1].hash]);
-            self.nodes.push(Node{hash, left: None, right: None});
-
+            let left = self.nodes[i].hash;
+            let right = self.nodes[i+1].hash;
+            let hash = get_sha256_vec(vec![left, right]);
+            let new_node = Node{hash, left: Some(i), right: Some(i+1)};
+            self.nodes.push(new_node);
             i+=2;
-
         }
+    }
+
+    pub fn contains_hash(&self, candidate: u64) -> bool {
+        let mut i = self.root_index;
+        let mut to_verify = candidate;
+        while i > 0 {
+            if self.nodes[i].left.is_some() && self.nodes[i].right.is_some(){
+                let left = self.nodes[i].left.unwrap();
+                let right = self.nodes[i].right.unwrap();
+                if self.nodes[left].hash == to_verify {
+                    to_verify = self.nodes[right].hash;
+                } else {
+                    to_verify = self.nodes[left].hash;
+                }
+            }
+            i = (i-1)/2;
+        }
+        to_verify == self.nodes[0].hash
+    }
+
+    pub fn contains_element(&self, candidate: u64) -> bool {
+        self.contains_hash(get_sha256(candidate))
     }
 }
 
@@ -121,6 +180,7 @@ mod tests {
 
     #[test]
     fn test_tree_generation() {
+
         let data: Vec<u8> = vec![1,2,3,4];
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
@@ -134,7 +194,49 @@ mod tests {
 
         let h7 = super::get_sha256_vec(vec![h5, h6]);
         assert_eq!(tree.get_root(), h7);
-        
+    }
+
+    #[test]
+    fn test_add_data() {
+        //TODO improve test. There is a bug here.
+        let data: Vec<u8> = vec![1,2,3,4];
+        let mut tree = super::MerkleTree::new(data);
+        tree.complete_tree();
+        let root = tree.get_root();
+
+        let data2: Vec<u8> = vec![5,6];
+        tree.add_data(data2);
+        let new_root = tree.get_root();
+
+        assert_ne!(root, new_root);
+
+    }
+
+    #[test]
+    fn test_contains_hash() {
+
+        let data: Vec<u8> = vec![1,2,3,4];
+        let mut tree = super::MerkleTree::new(data);
+        tree.complete_tree();
+
+        let to_check = super::get_sha256(1);
+        assert!(tree.contains_hash(to_check));
+    }
+
+    #[test]
+    fn test_contains_element() {
+        let data: Vec<u8> = vec![1,2,3,4];
+        let mut tree = super::MerkleTree::new(data);
+        tree.complete_tree();
+        assert!(tree.contains_element(1));
+    }
+
+    #[test]
+    fn test_contains_element_false() {
+        let data: Vec<u8> = vec![1,2,3,4];
+        let mut tree = super::MerkleTree::new(data);
+        tree.complete_tree();
+        assert!(!tree.contains_element(5));
     }
 
 }
