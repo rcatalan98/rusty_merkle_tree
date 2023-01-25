@@ -7,7 +7,7 @@ This is a solution to a proposed exercise to learn Rust. The objective is to imp
 
 Steps to use the code:
 1. Install rust and cargo if needed.
-2. Code the repo.
+2. Clone the repo.
 3. Run the tests ```cargo test```
 4. Try the implemented main code with ```cargo run```
 
