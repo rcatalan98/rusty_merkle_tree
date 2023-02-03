@@ -15,13 +15,14 @@ pub struct Node{
     right: Option<usize>,
 }
 
+#[derive(Debug)]
 pub struct Proof{
     path: Option<Vec<u64>>,
     direction: Option<Vec<bool>>,
 }
 
 impl MerkleTree {
-    pub fn new(data: Vec<u8>) -> MerkleTree {
+    pub fn new(data: Vec<u64>) -> MerkleTree {
         let nodes: Vec<Node> = MerkleTree::create_leafs(data);
         let leafs_index: usize = nodes.len() - 1;
         MerkleTree{nodes, leafs_offset: leafs_index, root_index: 0}
@@ -31,20 +32,20 @@ impl MerkleTree {
         self.nodes[self.nodes.len()-1].hash
     }
 
-    fn create_leafs(data: Vec<u8>) -> Vec<Node> {
+    fn create_leafs(data: Vec<u64>) -> Vec<Node> {
         let mut to_return = Vec::new();
         for i in 0..data.len() {
-            let hash = get_sha256(data[i] as u64);
+            let hash = get_sha256(data[i]);
             to_return.push(Node{hash, left: None, right: None});
         }
         to_return
     }
 
     //TODO fix.
-    pub fn add_data(&mut self, data: Vec<u8>) {
+    pub fn add_data(&mut self, data: Vec<u64>) {
         //insert the new data 
         for j in 0..data.len() {
-            let hash = get_sha256(data[j] as u64);
+            let hash = get_sha256(data[j]);
             self.nodes.insert(self.leafs_offset + 1 + j, Node{hash, left: None, right: None});
         }
 
@@ -252,7 +253,7 @@ mod tests {
     #[test]
     fn leafs_creation() {
 
-        let data: Vec<u8> = vec![1,2,3,4];
+        let data: Vec<u64> = vec![1,2,3,4];
         let leafs = super::MerkleTree::create_leafs(data);
         let h1 = super::get_sha256(1);
         assert_eq!(leafs[0].hash, h1);
@@ -268,7 +269,7 @@ mod tests {
     #[test]
     fn test_tree_generation() {
 
-        let data: Vec<u8> = vec![1,2,3,4];
+        let data: Vec<u64> = vec![1,2,3,4];
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
         assert_eq!(tree.nodes.len(), 7);
@@ -288,26 +289,53 @@ mod tests {
     #[test]
     fn test_add_data() {
         //TODO improve test. There is a bug here.
-        let data: Vec<u8> = vec![1,2,3,4];
+        let data: Vec<u64> = vec![1,2];
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
         let root = tree.get_root();
 
-        let data2: Vec<u8> = vec![5,6];
+        let data2: Vec<u64> = vec![3,4];
         tree.add_data(data2);
         let new_root = tree.get_root();
 
+        //if the tree is completed as it should then, the roots should be the same
+        let data3: Vec<u64> = vec![1,2,3,4];
+        let mut tree2 = super::MerkleTree::new(data3);
+        tree2.complete_tree();
+        let new_root2 = tree2.get_root();
+
         assert_ne!(root, new_root);
+        assert_eq!(new_root, new_root2);
 
-        println!("TREE: {:?}", tree.nodes);
 
-        assert_eq!(tree.nodes.len(), 11);
-        assert_eq!(tree.root_index, 10);
     }
 
     #[test]
+    fn test_add_data_verify_new(){
+        let data: Vec<u64> = vec![1,2];
+        let mut tree = super::MerkleTree::new(data);
+        tree.complete_tree();
+
+        let data2: Vec<u64> = vec![3,4];
+        tree.add_data(data2);
+        let new_root = tree.get_root();
+
+        println!("TREE: {:?}", tree.nodes);
+
+
+        let proof = tree.get_proof(3);
+        println!("PROOF: {:?}", proof);
+        assert!(proof.verify_proof(3, new_root));
+
+
+        let proof = tree.get_proof(4);
+        assert!(proof.verify_proof(4, new_root));
+    }
+
+
+    #[test]
     fn test_get_leafs(){
-        let data: Vec<u8> = vec![1,2,3,4];
+        let data: Vec<u64> = vec![1,2,3,4];
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
         let leafs = tree.get_leafs();
@@ -321,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_get_proof(){
-        let data: Vec<u8> = vec![1,2,3,4];
+        let data: Vec<u64> = vec![1,2,3,4];
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
         let candidate = 3;
@@ -335,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_verifier(){
-        let data: Vec<u8> = vec![1,2,3,4];
+        let data: Vec<u64> = vec![1,2,3,4];
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
 
@@ -346,7 +374,7 @@ mod tests {
 
     #[test]
     fn verifier_fails(){
-        let data: Vec<u8> = vec![1,2,3,4];
+        let data: Vec<u64> = vec![1,2,3,4];
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
 
@@ -356,7 +384,7 @@ mod tests {
 
     #[test]
     fn invalid_proof(){
-        let data: Vec<u8> = vec![1,2,3,4];
+        let data: Vec<u64> = vec![1,2,3,4];
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
 
@@ -367,7 +395,7 @@ mod tests {
 
     #[test]
     fn invalid_proof_element_include(){
-        let data: Vec<u8> = vec![1,2,3,4];
+        let data: Vec<u64> = vec![1,2,3,4];
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
 
