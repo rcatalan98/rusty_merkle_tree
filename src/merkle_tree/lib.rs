@@ -15,6 +15,11 @@ pub struct Node{
     right: Option<usize>,
 }
 
+pub struct Proof{
+    path: Option<Vec<u64>>,
+    direction: Option<Vec<bool>>,
+}
+
 impl MerkleTree {
     pub fn new(data: Vec<u8>) -> MerkleTree {
         let nodes: Vec<Node> = MerkleTree::create_leafs(data);
@@ -105,16 +110,16 @@ impl MerkleTree {
     // Returns the hashes to complete the tree and the directions to follow.
     // In the directions, true means right and false means left. Indicating where to position the hash you are using.
     // Returns empty vectors if the candidate is not in the tree.
-    pub fn get_proof(&self, candidate:u64) -> (Vec<u64>, Vec<bool>){
+    pub fn get_proof(&self, candidate:u64) -> Proof{
        for i in 0..self.leafs_offset + 1 {
            if self.nodes[i].hash == get_sha256(candidate) {
                return self.get_proof_from_index(i);
            }
        }
-        (Vec::new(), Vec::new())
+        Proof { path: None, direction: None }
     }
 
-    fn get_proof_from_index(&self, index: usize) -> (Vec<u64>, Vec<bool>) {
+    fn get_proof_from_index(&self, index: usize) -> Proof {
         let mut path = Vec::new();
         let mut direction = Vec::new();
         let mut current_index = index;
@@ -139,7 +144,7 @@ impl MerkleTree {
             }
             current_index = parent_index;
         }
-        (path, direction)
+        Proof::new(Some(path), Some(direction))
     }
 
     
@@ -154,6 +159,49 @@ impl MerkleTree {
     }
 
     
+}
+
+impl Proof {
+
+    pub fn new(path: Option<Vec<u64>>, direction: Option<Vec<bool>>) -> Proof {
+        Proof{path, direction}
+    }
+
+    // Verifies the proof of a candidate element. Returns true if the proof is valid.
+    // The candidate must be the element trying to check if it is in the tree. It's hashed internally.
+    pub fn verify_proof(&self, candidate: u64, root: u64) -> bool {
+
+        if self.path.is_none() || self.direction.is_none() {
+            return false;
+        }
+
+        let mut hash = get_sha256(candidate);
+        let mut i = 0;
+        let direction = self.get_direction().unwrap();
+        let path = self.get_path().unwrap();
+        while i < direction.len() {
+            match direction[i] {
+                true => hash = get_sha256_vec(vec![path[i], hash]),
+                false => hash = get_sha256_vec(vec![hash, path[i]]),
+            }
+            i += 1;
+        }
+        hash == root
+
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.path.is_none() && self.direction.is_none()
+    }
+
+    pub fn get_path(&self) -> Option<Vec<u64>> {
+        self.path.to_owned()
+    }
+
+    pub fn get_direction(&self) -> Option<Vec<bool>> {
+        self.direction.to_owned()
+    }
+
 }
 
 //function to convert the hash returned by the hasher to an u64. Using the first 8bytes
@@ -183,27 +231,7 @@ fn get_sha256_vec(data: Vec<u64>) -> u64 {
     hash_to_u64(result.to_vec())
 }
 
-// Verifies the proof of a candidate element. Returns true if the proof is valid.
-// The candidate must be the element trying to check if it is in the tree. It's hashed internally.
-fn verify_proof(candidate: u64, proof: Vec<u64>, path:Vec<bool>, root: u64) -> bool {
 
-    if proof.is_empty() || path.is_empty() {
-        return false;
-    }
-
-    let mut hash = get_sha256(candidate);
-    let mut i = 0;
-    while i < proof.len() {
-        match path[i] {
-            true => hash = get_sha256_vec(vec![proof[i], hash]),
-            false => hash = get_sha256_vec(vec![hash, proof[i]]),
-        }
-        i += 1;
-    }
-    println!("i: {}", i);
-    hash == root
-
-}
 
 #[cfg(test)]
 mod tests {
@@ -297,7 +325,8 @@ mod tests {
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
         let candidate = 3;
-        let (proof, path)= tree.get_proof(candidate);
+        let a_proof = tree.get_proof(candidate);
+        let proof = a_proof.get_path().unwrap();
         assert_eq!(proof.len(),2);
         assert_eq!(proof[0], super::get_sha256(4));
         assert_eq!(proof[1], super::get_sha256_vec(vec![super::get_sha256(1), super::get_sha256(2)]));
@@ -311,8 +340,8 @@ mod tests {
         tree.complete_tree();
 
         let candidate = 4;
-        let (proof, path) = tree.get_proof(candidate);
-        assert!(super::verify_proof(candidate, proof, path, tree.get_root()));
+        let proof = tree.get_proof(candidate);
+        assert!(proof.verify_proof(candidate, tree.get_root()));
     }
 
     #[test]
@@ -321,7 +350,7 @@ mod tests {
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
 
-        let (proof, path) = tree.get_proof(10000);
+        let proof = tree.get_proof(10000);
         assert!(proof.is_empty());
     }
 
@@ -332,8 +361,8 @@ mod tests {
         tree.complete_tree();
 
         let candidate = 4;
-        let (proof, path) = tree.get_proof(candidate);
-        assert!(!super::verify_proof(10, proof, path, tree.get_root()));
+        let proof = tree.get_proof(candidate);
+        assert!(!proof.verify_proof(10, tree.get_root()));
     }
 
     #[test]
@@ -343,8 +372,8 @@ mod tests {
         tree.complete_tree();
 
         let candidate = 4;
-        let (proof, path) = tree.get_proof(candidate);
-        assert!(!super::verify_proof(1, proof, path, tree.get_root()));
+        let proof = tree.get_proof(candidate);
+        assert!(!proof.verify_proof(1, tree.get_root()));
     }
     
 
