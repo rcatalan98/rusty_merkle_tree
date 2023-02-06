@@ -38,53 +38,96 @@ impl MerkleTree {
             let hash = get_sha256(data[i]);
             to_return.push(Node{hash, left: None, right: None});
         }
+        if to_return.len() % 2 != 0 {
+            to_return.push(to_return.last().unwrap().clone())
+        }
         to_return
     }
 
-    //TODO fix.
     pub fn add_data(&mut self, data: Vec<u64>) {
+
+        let mut new_data = data.clone();
+        if new_data.len() % 2 != 0 {
+            new_data.push(new_data.last().unwrap().clone())
+        }
+        if new_data.len() < self.leafs_offset + 1{
+            for i in 0..new_data.len() {
+                new_data.push(new_data[i]);
+            }
+        }
+
         //insert the new data 
-        for j in 0..data.len() {
-            let hash = get_sha256(data[j]);
+        for j in 0..new_data.len() {
+            let hash = get_sha256(new_data[j]);
             self.nodes.insert(self.leafs_offset + 1 + j, Node{hash, left: None, right: None});
         }
 
+        //update the indexes of the data structure
+        let new_data_index = self.leafs_offset;
+        self.leafs_offset += new_data.len() ;
+        self.root_index += new_data.len() ;
+        
+        
+
         //update the indexes of the nodes
-        for i in self.leafs_offset + 1..self.nodes.len() {
-            if self.nodes[i].left.is_some() && self.nodes[i].left.unwrap() > self.leafs_offset {
-                self.nodes[i].left = Some(self.nodes[i].left.unwrap() + data.len());
+        for i in (self.leafs_offset+1)..self.nodes.len(){
+            if self.nodes[i].left.is_some() && self.nodes[i].left.unwrap() > new_data_index {
+                self.nodes[i].left = Some(self.nodes[i].left.unwrap() + new_data.len());
             }
-            if self.nodes[i].right.is_some() && self.nodes[i].right.unwrap() > self.leafs_offset {
-                self.nodes[i].right = Some(self.nodes[i].right.unwrap() + data.len());
+            if self.nodes[i].right.is_some() && self.nodes[i].right.unwrap() > new_data_index {
+                self.nodes[i].right = Some(self.nodes[i].right.unwrap() + new_data.len());
             }
         }
 
 
         //complete the tree with new data
-        let mut i = 0;
-        while i < data.len() {
-            let left = self.nodes[self.leafs_offset + 1 + i].hash;
-            let right = self.nodes[self.leafs_offset + 1 + i + 1].hash;
-            let hash = get_sha256_vec(vec![left, right]);
-            let new_node = Node{hash, left: Some(self.leafs_offset + 1 + i), right: Some(self.leafs_offset + 1 + i + 1)};
-            self.nodes.push(new_node);
-            i+=2;
-        }
+        let mut i = new_data_index + 1;
+        let amount_nodes = 2usize.pow(new_data.len() as u32 - 1) - 1;
+        let mut j =  new_data.len();
 
-        //update the indexes
-        self.leafs_offset += data.len() ;
-        self.root_index += data.len() ;
+        println!("amount_nodes:{}", amount_nodes);
+        println!("j:{}", j);
+        while j < amount_nodes - 1{
+            let left = self.nodes[i].hash;
+            let right = self.nodes[i + 1].hash;
+            let hash = get_sha256_vec(vec![left, right]);
+            let new_node = Node{hash, left: Some(i), right: Some(i + 1)};
+            self.nodes.insert(self.root_index, new_node);
+            i+=2;
+            j += 1;
+            self.root_index += 1;
+        }
+        //add the last node from the new data
+        let left = self.nodes[self.root_index-2].hash;
+        let right = self.nodes[self.root_index-1].hash;
+        let hash = get_sha256_vec(vec![left, right]);
+        let new_node = Node{hash, left: Some(self.root_index-2), right: Some(self.root_index-1)};
+        self.nodes.push(new_node);
+
+        //compute root with the last two elements
+        let root_hash = get_sha256_vec(vec![self.nodes[self.nodes.len() - 2].hash, self.nodes[self.nodes.len() - 1].hash]);
+        let root_node = Node{hash: root_hash, left: Some(self.nodes.len() - 2), right: Some(self.nodes.len() - 1)};
+        self.nodes.push(root_node);
+        self.root_index = self.nodes.len() - 1;
+        
+        
+
+
+
+
+
+        
 
         //complete the tree from root with new data
-        let mut i = self.root_index;
-        while i < self.nodes.len() - 1{
-            let left = self.nodes[i].hash;
-            let right = self.nodes[i+1].hash;
-            let hash = get_sha256_vec(vec![left, right]);
-            let new_node = Node{hash, left: Some(i), right: Some(i+1)};
-            self.nodes.push(new_node);
-            i+=2;
-        }
+        // let mut i = self.root_index;
+        // while i < self.nodes.len() - 1{
+        //     let left = self.nodes[i].hash;
+        //     let right = self.nodes[i+1].hash;
+        //     let hash = get_sha256_vec(vec![left, right]);
+        //     let new_node = Node{hash, left: Some(i), right: Some(i+1)};
+        //     self.nodes.insert(i, new_node);
+        //     i+=2;
+        // }
         self.root_index = self.nodes.len() - 1;
 
     }
@@ -294,12 +337,13 @@ mod tests {
         tree.complete_tree();
         let root = tree.get_root();
 
-        let data2: Vec<u64> = vec![3,4];
+        let data2: Vec<u64> = vec![3];
         tree.add_data(data2);
         let new_root = tree.get_root();
+        println!("TREE: {:?}", tree.nodes);
 
         //if the tree is completed as it should then, the roots should be the same
-        let data3: Vec<u64> = vec![1,2,3,4];
+        let data3: Vec<u64> = vec![1,2,3,3];
         let mut tree2 = super::MerkleTree::new(data3);
         tree2.complete_tree();
         let new_root2 = tree2.get_root();
@@ -309,6 +353,34 @@ mod tests {
 
 
     }
+
+    #[test]
+    fn test_add_large_data() {
+        //TODO improve test. There is a bug here.
+        let data: Vec<u64> = vec![1,2,3,4];
+        let mut tree = super::MerkleTree::new(data);
+        tree.complete_tree();
+        let root = tree.get_root();
+
+        let data2: Vec<u64> = vec![5];
+        tree.add_data(data2);
+        let new_root = tree.get_root();
+        println!("TREE: {:?}", tree.nodes);
+        println!("");
+
+        //if the tree is completed as it should then, the roots should be the same
+        let data3: Vec<u64> = vec![1,2,3,4,5,5,5,5];
+        let mut tree2 = super::MerkleTree::new(data3);
+        tree2.complete_tree();
+        let new_root2 = tree2.get_root();
+        println!("TREE2: {:?}", tree2.nodes);
+
+        assert_ne!(root, new_root);
+        assert_eq!(new_root, new_root2);
+
+
+    }
+
 
     #[test]
     fn test_add_data_verify_new(){
@@ -403,6 +475,7 @@ mod tests {
         let proof = tree.get_proof(candidate);
         assert!(!proof.verify_proof(1, tree.get_root()));
     }
+
     
 
 }
