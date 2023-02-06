@@ -34,6 +34,17 @@ impl MerkleTree {
 
     fn create_leafs(data: Vec<u64>) -> Vec<Node> {
         let mut to_return = Vec::new();
+        if !is_pwr_two(data.len()) {
+            //add the last element n times till len is a power of two.
+            let mut i = 0;
+            while !is_pwr_two(data.len() + i) {
+                i += 1;
+            }
+            for _ in 0..i {
+                let hash = get_sha256(data.last().unwrap().clone());
+                to_return.push(Node{hash, left: None, right: None});
+            }
+        }
         for i in 0..data.len() {
             let hash = get_sha256(data[i]);
             to_return.push(Node{hash, left: None, right: None});
@@ -56,80 +67,73 @@ impl MerkleTree {
             }
         }
 
-        //insert the new data 
-        for j in 0..new_data.len() {
-            let hash = get_sha256(new_data[j]);
-            self.nodes.insert(self.leafs_offset + 1 + j, Node{hash, left: None, right: None});
-        }
+        let mut new_tree = MerkleTree::new(new_data);
+        new_tree.complete_tree();
+        self.merge_trees(new_tree);
 
-        //update the indexes of the data structure
-        let new_data_index = self.leafs_offset;
-        self.leafs_offset += new_data.len() ;
-        self.root_index += new_data.len() ;
-        
-        
+    }
 
-        //update the indexes of the nodes
-        for i in (self.leafs_offset+1)..self.nodes.len(){
-            if self.nodes[i].left.is_some() && self.nodes[i].left.unwrap() > new_data_index {
-                self.nodes[i].left = Some(self.nodes[i].left.unwrap() + new_data.len());
+    //adds the nodes of the tree to the current one. Should add it in order to mantian path selection.
+    fn merge_trees(&mut self, tree: MerkleTree) {
+        let tree_levels = tree.get_iterable_level();
+        let mut counter = 0;
+        let mut self_counter = 0;
+        for j in 0..tree_levels.len() {
+            counter += tree_levels[j].len();
+            for i in 0..tree_levels[j].len() {
+                let mut node = tree_levels[j][i].clone();
+                println!("node: {:?}, counter:{:?}, level_len: {:?}", node, counter, tree_levels[j].len());
+                if node.left.is_some() {
+                    node.left = Some(node.left.unwrap() + tree_levels[j-1].len());
+                }
+                if node.right.is_some() {
+                    node.right = Some(node.right.unwrap() + tree_levels[j-1].len());
+                }
+                self.nodes.insert(counter + i, node);
+                if self.nodes[i + self_counter].left.is_some() && self.nodes[i+self_counter].left.unwrap() >= self.leafs_offset + 1{
+                    self.nodes[i + self_counter].left = Some(self.nodes[i + self_counter].left.unwrap() + tree_levels[j-1].len());
+                }
+                if self.nodes[i + self_counter].right.is_some() && self.nodes[i+self_counter].right.unwrap() >= self.leafs_offset + 1{
+                    self.nodes[i + self_counter].right = Some(self.nodes[i + self_counter].right.unwrap() + tree_levels[j-1].len());
+                }
             }
-            if self.nodes[i].right.is_some() && self.nodes[i].right.unwrap() > new_data_index {
-                self.nodes[i].right = Some(self.nodes[i].right.unwrap() + new_data.len());
+            self_counter += tree_levels[j].len();
+            counter += tree_levels[j].len();
+            
+            if j == 0{
+                self.leafs_offset += tree_levels[j].len();
             }
         }
 
-
-        //complete the tree with new data
-        let mut i = new_data_index + 1;
-        let amount_nodes = 2usize.pow(new_data.len() as u32 - 1) - 1;
-        let mut j =  new_data.len();
-
-        println!("amount_nodes:{}", amount_nodes);
-        println!("j:{}", j);
-        while j < amount_nodes - 1{
-            let left = self.nodes[i].hash;
-            let right = self.nodes[i + 1].hash;
-            let hash = get_sha256_vec(vec![left, right]);
-            let new_node = Node{hash, left: Some(i), right: Some(i + 1)};
-            self.nodes.insert(self.root_index, new_node);
-            i+=2;
-            j += 1;
-            self.root_index += 1;
-        }
-        //add the last node from the new data
-        let left = self.nodes[self.root_index-2].hash;
-        let right = self.nodes[self.root_index-1].hash;
+        //compute new root
+        let left = self.nodes[self.nodes.len()-2].hash;
+        let right = self.nodes[self.nodes.len()-1].hash;
         let hash = get_sha256_vec(vec![left, right]);
-        let new_node = Node{hash, left: Some(self.root_index-2), right: Some(self.root_index-1)};
-        self.nodes.push(new_node);
-
-        //compute root with the last two elements
-        let root_hash = get_sha256_vec(vec![self.nodes[self.nodes.len() - 2].hash, self.nodes[self.nodes.len() - 1].hash]);
-        let root_node = Node{hash: root_hash, left: Some(self.nodes.len() - 2), right: Some(self.nodes.len() - 1)};
-        self.nodes.push(root_node);
-        self.root_index = self.nodes.len() - 1;
-        
-        
-
-
-
-
-
-        
-
-        //complete the tree from root with new data
-        // let mut i = self.root_index;
-        // while i < self.nodes.len() - 1{
-        //     let left = self.nodes[i].hash;
-        //     let right = self.nodes[i+1].hash;
-        //     let hash = get_sha256_vec(vec![left, right]);
-        //     let new_node = Node{hash, left: Some(i), right: Some(i+1)};
-        //     self.nodes.insert(i, new_node);
-        //     i+=2;
-        // }
+        let new_root = Node{hash, left: Some(self.nodes.len()-2), right: Some(self.nodes.len()-1)};
+        self.nodes.push(new_root);
         self.root_index = self.nodes.len() - 1;
 
+    }   
+
+    fn get_iterable_level(&self) -> Vec<Vec<Node>> {
+        let mut levels = Vec::new();
+        let mut level = Vec::new();
+        let mut j = self.leafs_offset + 1;
+        let mut i = 0;
+        let mut k = 1;
+        while i < self.nodes.len()  {
+            level.push(self.nodes[i].clone());
+            i+=1;
+            if i == j{
+                levels.push(level.clone());
+                level = Vec::new();
+                let to_add = (self.leafs_offset + 1)/(2_i32.pow(k)) as usize;
+                j += to_add;
+                k += 1;
+            }
+        }
+
+        levels
     }
 
     
@@ -201,8 +205,6 @@ impl MerkleTree {
         }
         to_return
     }
-
-    
 }
 
 impl Proof {
@@ -275,6 +277,10 @@ fn get_sha256_vec(data: Vec<u64>) -> u64 {
     hash_to_u64(result.to_vec())
 }
 
+fn is_pwr_two(n: usize) -> bool {
+    n != 0 && n & (n - 1) == 0
+}
+
 
 
 #[cfg(test)]
@@ -340,7 +346,6 @@ mod tests {
         let data2: Vec<u64> = vec![3];
         tree.add_data(data2);
         let new_root = tree.get_root();
-        println!("TREE: {:?}", tree.nodes);
 
         //if the tree is completed as it should then, the roots should be the same
         let data3: Vec<u64> = vec![1,2,3,3];
@@ -350,6 +355,11 @@ mod tests {
 
         assert_ne!(root, new_root);
         assert_eq!(new_root, new_root2);
+        
+        println!("TREE: {:?}", tree.nodes);
+        println!();
+        println!("TREE2: {:?}", tree2.nodes);
+
 
 
     }
@@ -365,19 +375,15 @@ mod tests {
         let data2: Vec<u64> = vec![5];
         tree.add_data(data2);
         let new_root = tree.get_root();
-        println!("TREE: {:?}", tree.nodes);
-        println!("");
 
         //if the tree is completed as it should then, the roots should be the same
         let data3: Vec<u64> = vec![1,2,3,4,5,5,5,5];
         let mut tree2 = super::MerkleTree::new(data3);
         tree2.complete_tree();
         let new_root2 = tree2.get_root();
-        println!("TREE2: {:?}", tree2.nodes);
 
         assert_ne!(root, new_root);
         assert_eq!(new_root, new_root2);
-
 
     }
 
@@ -392,13 +398,8 @@ mod tests {
         tree.add_data(data2);
         let new_root = tree.get_root();
 
-        println!("TREE: {:?}", tree.nodes);
-
-
         let proof = tree.get_proof(3);
-        println!("PROOF: {:?}", proof);
         assert!(proof.verify_proof(3, new_root));
-
 
         let proof = tree.get_proof(4);
         assert!(proof.verify_proof(4, new_root));
@@ -476,6 +477,72 @@ mod tests {
         assert!(!proof.verify_proof(1, tree.get_root()));
     }
 
-    
+    #[test]
+    fn test_merge_trees(){
+        let data: Vec<u64> = vec![1,2,3,4];
+        let mut tree = super::MerkleTree::new(data);
+        tree.complete_tree();
+        let old_root = tree.get_root();
+
+        let data1: Vec<u64> = vec![1,2];
+        let mut tree1 = super::MerkleTree::new(data1);
+        tree1.complete_tree();
+
+        let data2: Vec<u64> = vec![3,4];
+        let mut tree2 = super::MerkleTree::new(data2);
+        tree2.complete_tree();
+
+        tree1.merge_trees(tree2);
+        assert_eq!(old_root, tree1.get_root());
+
+    }
+
+    #[test]
+    fn test_is_pwr_two(){
+        assert!(super::is_pwr_two(2));
+        assert!(super::is_pwr_two(4));
+        assert!(super::is_pwr_two(8));
+        assert!(super::is_pwr_two(16));
+        assert!(super::is_pwr_two(32));
+        assert!(super::is_pwr_two(64));
+        assert!(super::is_pwr_two(128));
+        assert!(super::is_pwr_two(256));
+    }
+
+    #[test]
+    fn test_is_pwr_two_fails(){
+        assert!(!super::is_pwr_two(3));
+        assert!(!super::is_pwr_two(5));
+        assert!(!super::is_pwr_two(6));
+        assert!(!super::is_pwr_two(7));
+        assert!(!super::is_pwr_two(9));
+        assert!(!super::is_pwr_two(11));
+        assert!(!super::is_pwr_two(13));
+        assert!(!super::is_pwr_two(15));
+        assert!(!super::is_pwr_two(17));
+    }
+
+    #[test]
+    fn test_get_iterable_level(){
+        let data: Vec<u64> = vec![1,2,3,4];
+        let mut tree = super::MerkleTree::new(data);
+        tree.complete_tree();
+
+        let levels = tree.get_iterable_level();
+
+        assert_eq!(levels.len(), 3);
+        assert_eq!(levels[0].len(), 4);
+        assert_eq!(levels[1].len(), 2);
+        assert_eq!(levels[2].len(), 1);
+
+        let mut i = 0;
+        for l in levels{
+            for n in l{
+                assert_eq!(n.hash, tree.nodes[i].hash);
+                i += 1;
+            }
+        }
+
+    }
 
 }
