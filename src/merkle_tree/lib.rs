@@ -82,7 +82,6 @@ impl MerkleTree {
             counter += tree_levels[j].len();
             for i in 0..tree_levels[j].len() {
                 let mut node = tree_levels[j][i].clone();
-                println!("node: {:?}, counter:{:?}, level_len: {:?}", node, counter, tree_levels[j].len());
                 if node.left.is_some() {
                     node.left = Some(node.left.unwrap() + tree_levels[j-1].len());
                 }
@@ -132,7 +131,6 @@ impl MerkleTree {
                 k += 1;
             }
         }
-
         levels
     }
 
@@ -337,7 +335,6 @@ mod tests {
 
     #[test]
     fn test_add_data() {
-        //TODO improve test. There is a bug here.
         let data: Vec<u64> = vec![1,2];
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
@@ -366,7 +363,6 @@ mod tests {
 
     #[test]
     fn test_add_large_data() {
-        //TODO improve test. There is a bug here.
         let data: Vec<u64> = vec![1,2,3,4];
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
