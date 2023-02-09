@@ -10,14 +10,14 @@ pub struct MerkleTree {
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct Node{
-    hash: u64,
+    hash: Vec<u8>,
     left: Option<usize>,
     right: Option<usize>,
 }
 
 #[derive(Debug)]
 pub struct Proof{
-    path: Option<Vec<u64>>,
+    path: Option<Vec<Vec<u8>>>,
     direction: Option<Vec<bool>>,
 }
 
@@ -28,8 +28,8 @@ impl MerkleTree {
         MerkleTree{nodes, leavs_offset: leafs_index, root_index: 0}
     }
 
-    pub fn get_root(&self) -> u64 {
-        self.nodes[self.nodes.len()-1].hash
+    pub fn get_root(&self) -> Vec<u8> {
+        self.nodes[self.nodes.len()-1].hash.clone()
     }
 
     fn create_leavs(data: Vec<Vec<u8>>) -> Vec<Node> {
@@ -41,12 +41,12 @@ impl MerkleTree {
                 i += 1;
             }
             for _ in 0..i {
-                let hash = get_sha256(data.last().unwrap().clone());
+                let hash = get_sha256(data.last().unwrap());
                 to_return.push(Node{hash, left: None, right: None});
             }
         }
         for i in 0..data.len() {
-            let hash = get_sha256(data[i].clone());
+            let hash = get_sha256(&data[i]);
             to_return.push(Node{hash, left: None, right: None});
         }
         if to_return.len() % 2 != 0 {
@@ -105,9 +105,9 @@ impl MerkleTree {
         }
 
         //compute new root
-        let left = self.nodes[self.nodes.len()-2].hash;
-        let right = self.nodes[self.nodes.len()-1].hash;
-        let hash = get_sha256_vec(vec![left.to_be_bytes().to_vec(), right.to_be_bytes().to_vec()]);
+        let left = self.nodes[self.nodes.len()-2].hash.clone();
+        let right = self.nodes[self.nodes.len()-1].hash.clone();
+        let hash = get_sha256_vec(&vec![left, right]);
         let new_root = Node{hash, left: Some(self.nodes.len()-2), right: Some(self.nodes.len()-1)};
         self.nodes.push(new_root);
         self.root_index = self.nodes.len() - 1;
@@ -138,9 +138,9 @@ impl MerkleTree {
     pub fn complete_tree(&mut self) {
         let mut i = 0;
         while i < self.nodes.len() - 1{
-            let left = self.nodes[i].hash;
-            let right = self.nodes[i+1].hash;
-            let hash = get_sha256_vec(vec![left.to_be_bytes().to_vec(), right.to_be_bytes().to_vec()]);
+            let left = self.nodes[i].hash.clone();
+            let right = self.nodes[i+1].hash.clone();
+            let hash = get_sha256_vec(&vec![left, right]);
             let new_node = Node{hash, left: Some(i), right: Some(i+1)};
             self.nodes.push(new_node);
             i+=2;
@@ -158,7 +158,7 @@ impl MerkleTree {
     // Returns empty vectors if the candidate is not in the tree.
     pub fn get_proof(&self, candidate: Vec<u8>) -> Proof{
        for i in 0..self.leavs_offset + 1 {
-           if self.nodes[i].hash == get_sha256(candidate.clone()) {
+           if self.nodes[i].hash == get_sha256(&candidate) {
                return self.get_proof_from_index(i);
            }
        }
@@ -183,10 +183,10 @@ impl MerkleTree {
             
             if current_index % 2 == 0 {
                 direction.push(false);
-                path.push(self.nodes[current_index + 1].hash);
+                path.push(self.nodes[current_index + 1].hash.clone());
             } else {
                 direction.push(true);
-                path.push(self.nodes[current_index - 1].hash);
+                path.push(self.nodes[current_index - 1].hash.clone());
             }
             current_index = parent_index;
         }
@@ -207,26 +207,26 @@ impl MerkleTree {
 
 impl Proof {
 
-    pub fn new(path: Option<Vec<u64>>, direction: Option<Vec<bool>>) -> Proof {
+    pub fn new(path: Option<Vec<Vec<u8>>>, direction: Option<Vec<bool>>) -> Proof {
         Proof{path, direction}
     }
 
     // Verifies the proof of a candidate element. Returns true if the proof is valid.
     // The candidate must be the element trying to check if it is in the tree. It's hashed internally.
-    pub fn verify_proof(&self, candidate: Vec<u8>, root: u64) -> bool {
+    pub fn verify_proof(&self, candidate: Vec<u8>, root: Vec<u8>) -> bool {
 
         if self.path.is_none() || self.direction.is_none() {
             return false;
         }
 
-        let mut hash = get_sha256(candidate);
+        let mut hash = get_sha256(&candidate);
         let mut i = 0;
         let direction = self.get_direction().unwrap();
         let path = self.get_path().unwrap();
         while i < direction.len() {
             match direction[i] {
-                true => hash = get_sha256_vec( vec![path[i].to_be_bytes().to_vec(), hash.to_be_bytes().to_vec()]),
-                false => hash = get_sha256_vec(vec![hash.to_be_bytes().to_vec(), path[i].to_be_bytes().to_vec()]),
+                true => hash = get_sha256_vec( &vec![path[i].clone(), hash]),
+                false => hash = get_sha256_vec(&vec![hash, path[i].clone()]),
             }
             i += 1;
         }
@@ -238,7 +238,7 @@ impl Proof {
         self.path.is_none() && self.direction.is_none()
     }
 
-    pub fn get_path(&self) -> Option<Vec<u64>> {
+    pub fn get_path(&self) -> Option<Vec<Vec<u8>>> {
         self.path.to_owned()
     }
 
@@ -258,21 +258,21 @@ fn hash_to_u64(hash: Vec<u8>) -> u64 {
 }
 
 // calculate sha256 and returns the first 8 bytes of the hash
-fn get_sha256(data: Vec<u8>) -> u64 {
+fn get_sha256(data: &Vec<u8>) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(data);
     let result = hasher.finalize();
-    hash_to_u64(result.to_vec())
+    result.to_vec()[0..8].to_vec()
 }
 
 //function like get_sha256 but receives a vector of u64
-fn get_sha256_vec(data: Vec<Vec<u8>>) -> u64 {
+fn get_sha256_vec(data: &Vec<Vec<u8>>) -> Vec<u8> {
     let mut hasher = Sha256::new();
     for i in 0..data.len() {
         hasher.update(data[i].clone());
     }
     let result = hasher.finalize();
-    hash_to_u64(result.to_vec())
+    result.to_vec()[0..8].to_vec()
 }
 
 fn is_pwr_two(n: usize) -> bool {
@@ -319,13 +319,13 @@ mod tests {
 
         let data = super::raw_numbers_to_vector(vec![1,2,3,4]);
         let leafs = super::MerkleTree::create_leavs(data.clone());
-        let h1 = super::get_sha256(data[0].clone());
+        let h1 = super::get_sha256(&data[0]);
         assert_eq!(leafs[0].hash, h1);
-        let h2 = super::get_sha256(data[1].clone());
+        let h2 = super::get_sha256(&data[1].clone());
         assert_eq!(leafs[1].hash, h2);
-        let h3 = super::get_sha256(data[2].clone());
+        let h3 = super::get_sha256(&data[2].clone());
         assert_eq!(leafs[2].hash, h3);
-        let h4 = super::get_sha256(data[3].clone());
+        let h4 = super::get_sha256(&data[3].clone());
         assert_eq!(leafs[3].hash, h4);
 
     }
@@ -338,13 +338,13 @@ mod tests {
         tree.complete_tree();
         assert_eq!(tree.nodes.len(), 7);
         
-        let h5 = super::get_sha256_vec(vec![tree.nodes[0].hash.to_be_bytes().to_vec(), tree.nodes[1].hash.to_be_bytes().to_vec()]);
+        let h5 = super::get_sha256_vec(&vec![tree.nodes[0].hash.clone(), tree.nodes[1].hash.clone()]);
         assert_eq!(tree.nodes[4].hash, h5);
 
-        let h6 = super::get_sha256_vec(vec![tree.nodes[2].hash.to_be_bytes().to_vec(), tree.nodes[3].hash.to_be_bytes().to_vec()]);
+        let h6 = super::get_sha256_vec(&vec![tree.nodes[2].hash.clone(), tree.nodes[3].hash.clone()]);
         assert_eq!(tree.nodes[5].hash, h6);
 
-        let h7 = super::get_sha256_vec(vec![h5.to_be_bytes().to_vec(), h6.to_be_bytes().to_vec()]);
+        let h7 = super::get_sha256_vec(&vec![h5, h6]);
         assert_eq!(tree.get_root(), h7);
 
         assert_eq!(tree.root_index, 6);
@@ -417,11 +417,11 @@ mod tests {
         let candidate = 3_u8.to_be_bytes().to_vec();
         let proof = tree.get_proof(candidate.clone());
         println!("PROOF: {:?}", proof);
-        assert!(proof.verify_proof(candidate.clone(), new_root));
+        assert!(proof.verify_proof(candidate.clone(), new_root.clone()));
 
         let candidate = 4_u8.to_be_bytes().to_vec();
         let proof = tree.get_proof(candidate.clone());
-        assert!(proof.verify_proof(candidate.clone(), new_root));
+        assert!(proof.verify_proof(candidate.clone(), new_root.clone()));
     }
 
 
@@ -432,10 +432,10 @@ mod tests {
         tree.complete_tree();
         let leafs = tree.get_leafs();
         assert_eq!(leafs.len(), 4);
-        assert_eq!(leafs[0].hash, super::get_sha256(data[0].clone()));
-        assert_eq!(leafs[1].hash, super::get_sha256(data[1].clone()));
-        assert_eq!(leafs[2].hash, super::get_sha256(data[2].clone()));
-        assert_eq!(leafs[3].hash, super::get_sha256(data[3].clone()));
+        assert_eq!(leafs[0].hash, super::get_sha256(&data[0]));
+        assert_eq!(leafs[1].hash, super::get_sha256(&data[1]));
+        assert_eq!(leafs[2].hash, super::get_sha256(&data[2]));
+        assert_eq!(leafs[3].hash, super::get_sha256(&data[3]));
 
     }
 
@@ -448,9 +448,9 @@ mod tests {
         let a_proof = tree.get_proof(candidate.clone());
         let proof = a_proof.get_path().unwrap();
         assert_eq!(proof.len(),2);
-        assert_eq!(proof[0].clone(), super::get_sha256(data[3].clone()));
-        assert_eq!(proof[1].clone(), super::get_sha256_vec(vec![super::get_sha256(data[0].clone()).to_be_bytes().to_vec(), super::get_sha256(data[1].clone()).to_be_bytes().to_vec()]));
-        assert_eq!(tree.get_root(), super::get_sha256_vec(vec![proof[1].to_be_bytes().to_vec(), super::get_sha256_vec(vec![super::get_sha256(candidate).to_be_bytes().to_vec(), proof[0].to_be_bytes().to_vec()]).to_be_bytes().to_vec()]));
+        assert_eq!(proof[0].clone(), super::get_sha256(&data[3]));
+        assert_eq!(proof[1].clone(), super::get_sha256_vec(&vec![super::get_sha256(&data[0]), super::get_sha256(&data[1])]));
+        assert_eq!(tree.get_root(), super::get_sha256_vec(&vec![proof[1].clone(), super::get_sha256_vec(&vec![super::get_sha256(&candidate), proof[0].clone()])]));
     }
 
     #[test]
