@@ -22,7 +22,7 @@ pub struct Proof{
 }
 
 impl MerkleTree {
-    pub fn new(data: Vec<u64>) -> MerkleTree {
+    pub fn new(data: Vec<Vec<u8>>) -> MerkleTree{
         let nodes: Vec<Node> = MerkleTree::create_leavs(data);
         let leafs_index: usize = nodes.len() - 1;
         MerkleTree{nodes, leavs_offset: leafs_index, root_index: 0}
@@ -32,7 +32,7 @@ impl MerkleTree {
         self.nodes[self.nodes.len()-1].hash
     }
 
-    fn create_leavs(data: Vec<u64>) -> Vec<Node> {
+    fn create_leavs(data: Vec<Vec<u8>>) -> Vec<Node> {
         let mut to_return = Vec::new();
         if !is_pwr_two(data.len()) {
             //add the last element n times till len is a power of two.
@@ -46,7 +46,7 @@ impl MerkleTree {
             }
         }
         for i in 0..data.len() {
-            let hash = get_sha256(data[i]);
+            let hash = get_sha256(data[i].clone());
             to_return.push(Node{hash, left: None, right: None});
         }
         if to_return.len() % 2 != 0 {
@@ -55,7 +55,7 @@ impl MerkleTree {
         to_return
     }
 
-    pub fn add_data(&mut self, data: Vec<u64>) {
+    pub fn add_data(&mut self, data: Vec<Vec<u8>>) {
 
         let mut new_data = data.clone();
         if new_data.len() % 2 != 0 {
@@ -63,7 +63,7 @@ impl MerkleTree {
         }
         if new_data.len() < self.leavs_offset + 1{
             for i in 0..new_data.len() {
-                new_data.push(new_data[i]);
+                new_data.push(new_data[i].clone());
             }
         }
 
@@ -107,7 +107,7 @@ impl MerkleTree {
         //compute new root
         let left = self.nodes[self.nodes.len()-2].hash;
         let right = self.nodes[self.nodes.len()-1].hash;
-        let hash = get_sha256_vec(vec![left, right]);
+        let hash = get_sha256_vec(vec![left.to_be_bytes().to_vec(), right.to_be_bytes().to_vec()]);
         let new_root = Node{hash, left: Some(self.nodes.len()-2), right: Some(self.nodes.len()-1)};
         self.nodes.push(new_root);
         self.root_index = self.nodes.len() - 1;
@@ -140,7 +140,7 @@ impl MerkleTree {
         while i < self.nodes.len() - 1{
             let left = self.nodes[i].hash;
             let right = self.nodes[i+1].hash;
-            let hash = get_sha256_vec(vec![left, right]);
+            let hash = get_sha256_vec(vec![left.to_be_bytes().to_vec(), right.to_be_bytes().to_vec()]);
             let new_node = Node{hash, left: Some(i), right: Some(i+1)};
             self.nodes.push(new_node);
             i+=2;
@@ -156,9 +156,9 @@ impl MerkleTree {
     // Returns the hashes to complete the tree and the directions to follow.
     // In the directions, true means right and false means left. Indicating where to position the hash you are using.
     // Returns empty vectors if the candidate is not in the tree.
-    pub fn get_proof(&self, candidate:u64) -> Proof{
+    pub fn get_proof(&self, candidate: Vec<u8>) -> Proof{
        for i in 0..self.leavs_offset + 1 {
-           if self.nodes[i].hash == get_sha256(candidate) {
+           if self.nodes[i].hash == get_sha256(candidate.clone()) {
                return self.get_proof_from_index(i);
            }
        }
@@ -213,7 +213,7 @@ impl Proof {
 
     // Verifies the proof of a candidate element. Returns true if the proof is valid.
     // The candidate must be the element trying to check if it is in the tree. It's hashed internally.
-    pub fn verify_proof(&self, candidate: u64, root: u64) -> bool {
+    pub fn verify_proof(&self, candidate: Vec<u8>, root: u64) -> bool {
 
         if self.path.is_none() || self.direction.is_none() {
             return false;
@@ -225,8 +225,8 @@ impl Proof {
         let path = self.get_path().unwrap();
         while i < direction.len() {
             match direction[i] {
-                true => hash = get_sha256_vec(vec![path[i], hash]),
-                false => hash = get_sha256_vec(vec![hash, path[i]]),
+                true => hash = get_sha256_vec( vec![path[i].to_be_bytes().to_vec(), hash.to_be_bytes().to_vec()]),
+                false => hash = get_sha256_vec(vec![hash.to_be_bytes().to_vec(), path[i].to_be_bytes().to_vec()]),
             }
             i += 1;
         }
@@ -258,18 +258,18 @@ fn hash_to_u64(hash: Vec<u8>) -> u64 {
 }
 
 // calculate sha256 and returns the first 8 bytes of the hash
-fn get_sha256(data: u64) -> u64 {
+fn get_sha256(data: Vec<u8>) -> u64 {
     let mut hasher = Sha256::new();
-    hasher.update(data.to_be_bytes());
+    hasher.update(data);
     let result = hasher.finalize();
     hash_to_u64(result.to_vec())
 }
 
 //function like get_sha256 but receives a vector of u64
-fn get_sha256_vec(data: Vec<u64>) -> u64 {
+fn get_sha256_vec(data: Vec<Vec<u8>>) -> u64 {
     let mut hasher = Sha256::new();
     for i in 0..data.len() {
-        hasher.update(data[i].to_be_bytes());
+        hasher.update(data[i].clone());
     }
     let result = hasher.finalize();
     hash_to_u64(result.to_vec())
@@ -278,6 +278,15 @@ fn get_sha256_vec(data: Vec<u64>) -> u64 {
 fn is_pwr_two(n: usize) -> bool {
     n != 0 && n & (n - 1) == 0
 }
+
+fn raw_numbers_to_vector(data: Vec<u8>) -> Vec<Vec<u8>> {
+    let mut to_return = Vec::new();
+    for i in 0..data.len() {
+        to_return.push(vec![data[i]]);
+    }
+    to_return
+}
+
 
 
 
@@ -298,17 +307,25 @@ mod tests {
     }
 
     #[test]
+    fn raw_numbers_to_vector_test(){
+        let data = vec![1,2,3,4];
+        let expected = vec![vec![1], vec![2], vec![3], vec![4]];
+        let result = super::raw_numbers_to_vector(data);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
     fn leafs_creation() {
 
-        let data: Vec<u64> = vec![1,2,3,4];
-        let leafs = super::MerkleTree::create_leavs(data);
-        let h1 = super::get_sha256(1);
+        let data = super::raw_numbers_to_vector(vec![1,2,3,4]);
+        let leafs = super::MerkleTree::create_leavs(data.clone());
+        let h1 = super::get_sha256(data[0].clone());
         assert_eq!(leafs[0].hash, h1);
-        let h2 = super::get_sha256(2);
+        let h2 = super::get_sha256(data[1].clone());
         assert_eq!(leafs[1].hash, h2);
-        let h3 = super::get_sha256(3);
+        let h3 = super::get_sha256(data[2].clone());
         assert_eq!(leafs[2].hash, h3);
-        let h4 = super::get_sha256(4);
+        let h4 = super::get_sha256(data[3].clone());
         assert_eq!(leafs[3].hash, h4);
 
     }
@@ -316,18 +333,18 @@ mod tests {
     #[test]
     fn test_tree_generation() {
 
-        let data: Vec<u64> = vec![1,2,3,4];
-        let mut tree = super::MerkleTree::new(data);
+        let data = super::raw_numbers_to_vector(vec![1,2,3,4]);
+        let mut tree = super::MerkleTree::new(data.clone());
         tree.complete_tree();
         assert_eq!(tree.nodes.len(), 7);
         
-        let h5 = super::get_sha256_vec(vec![tree.nodes[0].hash, tree.nodes[1].hash]);
+        let h5 = super::get_sha256_vec(vec![tree.nodes[0].hash.to_be_bytes().to_vec(), tree.nodes[1].hash.to_be_bytes().to_vec()]);
         assert_eq!(tree.nodes[4].hash, h5);
 
-        let h6 = super::get_sha256_vec(vec![tree.nodes[2].hash, tree.nodes[3].hash]);
+        let h6 = super::get_sha256_vec(vec![tree.nodes[2].hash.to_be_bytes().to_vec(), tree.nodes[3].hash.to_be_bytes().to_vec()]);
         assert_eq!(tree.nodes[5].hash, h6);
 
-        let h7 = super::get_sha256_vec(vec![h5, h6]);
+        let h7 = super::get_sha256_vec(vec![h5.to_be_bytes().to_vec(), h6.to_be_bytes().to_vec()]);
         assert_eq!(tree.get_root(), h7);
 
         assert_eq!(tree.root_index, 6);
@@ -335,17 +352,18 @@ mod tests {
 
     #[test]
     fn test_add_data() {
-        let data: Vec<u64> = vec![1,2];
-        let mut tree = super::MerkleTree::new(data);
+        let data = super::raw_numbers_to_vector(vec![1,2]);
+        let mut tree = super::MerkleTree::new(data.clone());
         tree.complete_tree();
         let root = tree.get_root();
 
-        let data2: Vec<u64> = vec![3];
+        let data2 = super::raw_numbers_to_vector(vec![3]);
         tree.add_data(data2);
         let new_root = tree.get_root();
 
         //if the tree is completed as it should then, the roots should be the same
-        let data3: Vec<u64> = vec![1,2,3,3];
+        let data3 = super::raw_numbers_to_vector(vec![1,2,3,3]);
+
         let mut tree2 = super::MerkleTree::new(data3);
         tree2.complete_tree();
         let new_root2 = tree2.get_root();
@@ -363,17 +381,17 @@ mod tests {
 
     #[test]
     fn test_add_large_data() {
-        let data: Vec<u64> = vec![1,2,3,4];
+        let data: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![1,2,3,4]);
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
         let root = tree.get_root();
 
-        let data2: Vec<u64> = vec![5];
+        let data2: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![5]);
         tree.add_data(data2);
         let new_root = tree.get_root();
 
         //if the tree is completed as it should then, the roots should be the same
-        let data3: Vec<u64> = vec![1,2,3,4,5,5,5,5];
+        let data3: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![1,2,3,4,5,5,5,5]);
         let mut tree2 = super::MerkleTree::new(data3);
         tree2.complete_tree();
         let new_root2 = tree2.get_root();
@@ -386,106 +404,111 @@ mod tests {
 
     #[test]
     fn test_add_data_verify_new(){
-        let data: Vec<u64> = vec![1,2];
+        let data: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![1,2]);
         let mut tree = super::MerkleTree::new(data);
         tree.complete_tree();
 
-        let data2: Vec<u64> = vec![3,4];
+        let data2: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![3,4]);
         tree.add_data(data2);
         let new_root = tree.get_root();
+        println!("TREE: {:?}", tree.nodes);
 
-        let proof = tree.get_proof(3);
-        assert!(proof.verify_proof(3, new_root));
 
-        let proof = tree.get_proof(4);
-        assert!(proof.verify_proof(4, new_root));
+        let candidate = 3_u8.to_be_bytes().to_vec();
+        let proof = tree.get_proof(candidate.clone());
+        println!("PROOF: {:?}", proof);
+        assert!(proof.verify_proof(candidate.clone(), new_root));
+
+        let candidate = 4_u8.to_be_bytes().to_vec();
+        let proof = tree.get_proof(candidate.clone());
+        assert!(proof.verify_proof(candidate.clone(), new_root));
     }
 
 
     #[test]
     fn test_get_leafs(){
-        let data: Vec<u64> = vec![1,2,3,4];
-        let mut tree = super::MerkleTree::new(data);
+        let data: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![1,2,3,4]);
+        let mut tree = super::MerkleTree::new(data.clone());
         tree.complete_tree();
         let leafs = tree.get_leafs();
         assert_eq!(leafs.len(), 4);
-        assert_eq!(leafs[0].hash, super::get_sha256(1));
-        assert_eq!(leafs[1].hash, super::get_sha256(2));
-        assert_eq!(leafs[2].hash, super::get_sha256(3));
-        assert_eq!(leafs[3].hash, super::get_sha256(4));
+        assert_eq!(leafs[0].hash, super::get_sha256(data[0].clone()));
+        assert_eq!(leafs[1].hash, super::get_sha256(data[1].clone()));
+        assert_eq!(leafs[2].hash, super::get_sha256(data[2].clone()));
+        assert_eq!(leafs[3].hash, super::get_sha256(data[3].clone()));
 
     }
 
     #[test]
     fn test_get_proof(){
-        let data: Vec<u64> = vec![1,2,3,4];
-        let mut tree = super::MerkleTree::new(data);
+        let data: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![1,2,3,4]);
+        let mut tree = super::MerkleTree::new(data.clone());
         tree.complete_tree();
-        let candidate = 3;
-        let a_proof = tree.get_proof(candidate);
+        let candidate: Vec<u8> = 3_u8.to_be_bytes().to_vec();
+        let a_proof = tree.get_proof(candidate.clone());
         let proof = a_proof.get_path().unwrap();
         assert_eq!(proof.len(),2);
-        assert_eq!(proof[0], super::get_sha256(4));
-        assert_eq!(proof[1], super::get_sha256_vec(vec![super::get_sha256(1), super::get_sha256(2)]));
-        assert_eq!(tree.get_root(), super::get_sha256_vec(vec![proof[1], super::get_sha256_vec(vec![super::get_sha256(candidate), proof[0]])]));
+        assert_eq!(proof[0].clone(), super::get_sha256(data[3].clone()));
+        assert_eq!(proof[1].clone(), super::get_sha256_vec(vec![super::get_sha256(data[0].clone()).to_be_bytes().to_vec(), super::get_sha256(data[1].clone()).to_be_bytes().to_vec()]));
+        assert_eq!(tree.get_root(), super::get_sha256_vec(vec![proof[1].to_be_bytes().to_vec(), super::get_sha256_vec(vec![super::get_sha256(candidate).to_be_bytes().to_vec(), proof[0].to_be_bytes().to_vec()]).to_be_bytes().to_vec()]));
     }
 
     #[test]
     fn test_verifier(){
-        let data: Vec<u64> = vec![1,2,3,4];
-        let mut tree = super::MerkleTree::new(data);
+        let data: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![1,2,3,4]);
+        let mut tree = super::MerkleTree::new(data.clone());
         tree.complete_tree();
 
-        let candidate = 4;
-        let proof = tree.get_proof(candidate);
-        assert!(proof.verify_proof(candidate, tree.get_root()));
+        let candidate:Vec<u8> = 4_u8.to_be_bytes().to_vec();
+        let proof = tree.get_proof(candidate.clone());
+        assert!(proof.verify_proof(candidate.clone(), tree.get_root()));
     }
 
     #[test]
     fn verifier_fails(){
-        let data: Vec<u64> = vec![1,2,3,4];
-        let mut tree = super::MerkleTree::new(data);
+        let data: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![1,2,3,4]);
+        let mut tree = super::MerkleTree::new(data.clone());
         tree.complete_tree();
 
-        let proof = tree.get_proof(10000);
+        let proof = tree.get_proof(100_u8.to_be_bytes().to_vec());
         assert!(proof.is_empty());
     }
 
     #[test]
     fn invalid_proof(){
-        let data: Vec<u64> = vec![1,2,3,4];
-        let mut tree = super::MerkleTree::new(data);
+        let data: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![1,2,3,4]);
+        let mut tree = super::MerkleTree::new(data.clone());
         tree.complete_tree();
 
-        let candidate = 4;
-        let proof = tree.get_proof(candidate);
-        assert!(!proof.verify_proof(10, tree.get_root()));
+        let candidate:Vec<u8> = 4_u8.to_be_bytes().to_vec();
+        let proof = tree.get_proof(candidate.clone());
+        assert!(!proof.verify_proof(10_u8.to_be_bytes().to_vec(), tree.get_root()));
     }
 
     #[test]
     fn invalid_proof_element_include(){
-        let data: Vec<u64> = vec![1,2,3,4];
-        let mut tree = super::MerkleTree::new(data);
+        let data: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![1,2,3,4]);
+        let mut tree = super::MerkleTree::new(data.clone());
         tree.complete_tree();
 
-        let candidate = 4;
-        let proof = tree.get_proof(candidate);
-        assert!(!proof.verify_proof(1, tree.get_root()));
+        let candidate: Vec<u8> = 4_u8.to_be_bytes().to_vec();
+        let proof = tree.get_proof(candidate.clone());
+        assert!(!proof.verify_proof(1_u8.to_be_bytes().to_vec(), tree.get_root()));
     }
 
     #[test]
     fn test_merge_trees(){
-        let data: Vec<u64> = vec![1,2,3,4];
-        let mut tree = super::MerkleTree::new(data);
+        let data: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![1,2,3,4]);
+        let mut tree = super::MerkleTree::new(data.clone());
         tree.complete_tree();
         let old_root = tree.get_root();
 
-        let data1: Vec<u64> = vec![1,2];
-        let mut tree1 = super::MerkleTree::new(data1);
+        let data1: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![1,2]);
+        let mut tree1 = super::MerkleTree::new(data1.clone());
         tree1.complete_tree();
 
-        let data2: Vec<u64> = vec![3,4];
-        let mut tree2 = super::MerkleTree::new(data2);
+        let data2: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![3,4]);
+        let mut tree2 = super::MerkleTree::new(data2.clone());
         tree2.complete_tree();
 
         tree1.merge_trees(tree2);
@@ -520,8 +543,8 @@ mod tests {
 
     #[test]
     fn test_get_iterable_level(){
-        let data: Vec<u64> = vec![1,2,3,4];
-        let mut tree = super::MerkleTree::new(data);
+        let data: Vec<Vec<u8>> = super::raw_numbers_to_vector(vec![1,2,3,4]);
+        let mut tree = super::MerkleTree::new(data.clone());
         tree.complete_tree();
 
         let levels = tree.get_iterable_level();
