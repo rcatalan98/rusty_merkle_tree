@@ -248,14 +248,6 @@ impl Proof {
 
 }
 
-//function to convert the hash returned by the hasher to an u64. Using the first 8bytes
-fn hash_to_u64(hash: Vec<u8>) -> u64 {
-    let mut to_return: u64 = 0;
-    for i in 0..8 {
-        to_return += (hash[i] as u64) << ((7-i) * 8);
-    }
-    to_return
-}
 
 // calculate sha256 and returns the first 8 bytes of the hash
 fn get_sha256(data: &Vec<u8>) -> Vec<u8> {
@@ -279,13 +271,6 @@ fn is_pwr_two(n: usize) -> bool {
     n != 0 && n & (n - 1) == 0
 }
 
-fn raw_numbers_to_vector(data: Vec<u8>) -> Vec<Vec<u8>> {
-    let mut to_return = Vec::new();
-    for i in 0..data.len() {
-        to_return.push(vec![data[i]]);
-    }
-    to_return
-}
 
 
 
