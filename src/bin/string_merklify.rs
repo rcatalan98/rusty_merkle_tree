@@ -9,7 +9,7 @@ fn main() {
     let mut tree: MerkleTree = MerkleTree::new(data);
     tree.complete_tree();
 
-    let candidate = " ".as_bytes().to_vec();
+    let candidate = "Hello".as_bytes().to_vec();
 
     //get proof of Hello
     let proof: Proof = tree.get_proof(candidate.clone());
