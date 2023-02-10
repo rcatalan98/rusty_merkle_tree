@@ -10,5 +10,5 @@ hex-literal = "0.3.4"
 sha2 = "0.10.6"
 
 [lib]
-path = "src/merkle_tree/lib.rs"
+path = "src/lib.rs"
 
