@@ -3,7 +3,7 @@ use crate::utils::*;
 #[derive(Debug)]
 pub struct MerkleTree {
     nodes: Vec<Node>,
-    leavs_offset: usize,
+    leaves_offset: usize,
     root_index: usize,
 }
 
@@ -23,16 +23,16 @@ pub struct Proof{
 
 impl MerkleTree {
     pub fn new(data: Vec<Vec<u8>>) -> MerkleTree{
-        let nodes: Vec<Node> = MerkleTree::create_leavs(data);
-        let leafs_index: usize = nodes.len() - 1;
-        MerkleTree{nodes, leavs_offset: leafs_index, root_index: 0}
+        let nodes: Vec<Node> = MerkleTree::create_leaves(data);
+        let leaves_index: usize = nodes.len() - 1;
+        MerkleTree{nodes, leaves_offset: leaves_index, root_index: 0}
     }
 
     pub fn get_root(&self) -> Vec<u8> {
         self.nodes[self.nodes.len()-1].hash.clone()
     }
 
-    fn create_leavs(data: Vec<Vec<u8>>) -> Vec<Node> {
+    fn create_leaves(data: Vec<Vec<u8>>) -> Vec<Node> {
         let mut to_return = Vec::new();
         if !is_pwr_two(data.len()) {
             //add the last element n times till len is a power of two.
@@ -61,7 +61,7 @@ impl MerkleTree {
         if new_data.len() % 2 != 0 {
             new_data.push(new_data.last().unwrap().clone())
         }
-        if new_data.len() < self.leavs_offset + 1{
+        if new_data.len() < self.leaves_offset + 1{
             for i in 0..new_data.len() {
                 new_data.push(new_data[i].clone());
             }
@@ -89,10 +89,10 @@ impl MerkleTree {
                     node.right = Some(node.right.unwrap() + tree_levels[j-1].len());
                 }
                 self.nodes.insert(counter + i, node);
-                if self.nodes[i + self_counter].left.is_some() && self.nodes[i+self_counter].left.unwrap() >= self.leavs_offset + 1{
+                if self.nodes[i + self_counter].left.is_some() && self.nodes[i+self_counter].left.unwrap() >= self.leaves_offset + 1{
                     self.nodes[i + self_counter].left = Some(self.nodes[i + self_counter].left.unwrap() + tree_levels[j-1].len());
                 }
-                if self.nodes[i + self_counter].right.is_some() && self.nodes[i+self_counter].right.unwrap() >= self.leavs_offset + 1{
+                if self.nodes[i + self_counter].right.is_some() && self.nodes[i+self_counter].right.unwrap() >= self.leaves_offset + 1{
                     self.nodes[i + self_counter].right = Some(self.nodes[i + self_counter].right.unwrap() + tree_levels[j-1].len());
                 }
             }
@@ -100,7 +100,7 @@ impl MerkleTree {
             counter += tree_levels[j].len();
             
             if j == 0{
-                self.leavs_offset += tree_levels[j].len();
+                self.leaves_offset += tree_levels[j].len();
             }
         }
 
@@ -117,7 +117,7 @@ impl MerkleTree {
     fn get_iterable_level(&self) -> Vec<Vec<Node>> {
         let mut levels = Vec::new();
         let mut level = Vec::new();
-        let mut j = self.leavs_offset + 1;
+        let mut j = self.leaves_offset + 1;
         let mut i = 0;
         let mut k = 1;
         while i < self.nodes.len()  {
@@ -126,7 +126,7 @@ impl MerkleTree {
             if i == j{
                 levels.push(level.clone());
                 level = Vec::new();
-                let to_add = (self.leavs_offset + 1)/(2_i32.pow(k)) as usize;
+                let to_add = (self.leaves_offset + 1)/(2_i32.pow(k)) as usize;
                 j += to_add;
                 k += 1;
             }
@@ -149,7 +149,7 @@ impl MerkleTree {
     }
 
     pub fn is_leaf(&self, index: usize) -> bool {
-        index <= self.leavs_offset
+        index <= self.leaves_offset
     }
 
     // receives a candidate element, hashes and sends to the proof function.
@@ -157,7 +157,7 @@ impl MerkleTree {
     // In the directions, true means right and false means left. Indicating where to position the hash you are using.
     // Returns empty vectors if the candidate is not in the tree.
     pub fn get_proof(&self, candidate: Vec<u8>) -> Proof{
-       for i in 0..self.leavs_offset + 1 {
+       for i in 0..self.leaves_offset + 1 {
            if self.nodes[i].hash == get_sha256(&candidate) {
                return self.get_proof_from_index(i);
            }
@@ -198,7 +198,7 @@ impl MerkleTree {
 
     pub fn get_leafs(&self) -> Vec<Node> {
         let mut to_return = Vec::new();
-        for i in 0..self.leavs_offset + 1 {
+        for i in 0..self.leaves_offset + 1 {
             to_return.push(self.nodes[i].to_owned());
         }
         to_return
@@ -256,13 +256,13 @@ impl Proof {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
 
     #[test]
     fn leafs_creation() {
 
         let data = raw_numbers_to_vector(vec![1,2,3,4]);
-        let leafs = MerkleTree::create_leavs(data.clone());
+        let leafs = MerkleTree::create_leaves(data.clone());
         let h1 = get_sha256(&data[0]);
         assert_eq!(leafs[0].hash, h1);
         let h2 = get_sha256(&data[1].clone());

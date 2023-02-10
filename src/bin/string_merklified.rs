@@ -1,9 +1,11 @@
 use rusty_merkle_tree::{MerkleTree, Proof};
 fn main() {
     let str: String = "Hello World".to_string();
-    //str cut in spaces
+
+    //str cut in blocks so it can be merklified
     let data: Vec<&str> = str.split(" ").collect();
-    // data to vec<vec<u8>>
+
+    // data transformed to bytes.
     let data: Vec<Vec<u8>> = data.iter().map(|x| x.as_bytes().to_vec()).collect();
 
     let mut tree: MerkleTree = MerkleTree::new(data);
